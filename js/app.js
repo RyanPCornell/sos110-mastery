@@ -14,11 +14,17 @@
   function chState(id) { return S.ch[id] || (S.ch[id] = { c: {}, t0: Date.now(), time: 0, last: null, act: 0 }); }
   function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function rngOf(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  // version order for one student: shuffled, but a concept with `lead: 'type'` serves those versions first, so a miss
+  // on one leads to a parallel version of the same type before the others
+  function seqFor(c) {
+    const all = WG.shuffle(c.variants.map((v, i) => i), rngOf(hash((S.student ? S.student.name : '') + '|' + c.id)));
+    return c.lead ? all.filter(i => c.variants[i].type === c.lead).concat(all.filter(i => c.variants[i].type !== c.lead)) : all;
+  }
   function cState(ch, c) {
     const cs = chState(ch.id), r = cs.c[c.id];
-    if (r) return r;
-    const seq = WG.shuffle(c.variants.map((v, i) => i), rngOf(hash((S.student ? S.student.name : '') + '|' + c.id)));
-    return (cs.c[c.id] = { tries: [], m: 0, mt: 0, seq, cur: 0 });
+    // a bank that gained versions since this student started gets a fresh order (tries keep their version indexes)
+    if (r) { if (r.seq.length !== c.variants.length) { r.seq = seqFor(c); r.cur = 0; } return r; }
+    return (cs.c[c.id] = { tries: [], m: 0, mt: 0, seq: seqFor(c), cur: 0 });
   }
   const statusOf = r => !r || !r.tries.length ? 'new' : r.m ? 'ok' : 'wip';
   function stats(ch) {

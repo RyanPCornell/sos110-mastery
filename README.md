@@ -17,7 +17,7 @@ Live site: <https://ryanpcornell.github.io/sos110-mastery/>
   balancing).
 - **Resources:** each concept has review notes, a figure, key terms and links to the exact lecture slides. They start
   folded (try first) and open on request, after a miss, or once the concept is mastered.
-- **Grades:** chapter grade = concepts mastered ÷ concepts in the chapter (20 is the standard; Chapter 11 has 21, counting its loop-building concept). The gradebook shows status, every try, mastery dates, first-try
+- **Grades:** chapter grade = concepts mastered ÷ 20. The gradebook shows status, every try, mastery dates, first-try
   accuracy and practice time, and prints cleanly to PDF.
 - **Storage:** progress is kept in the browser (localStorage). A "save code" moves it between computers. Nothing is
   sent to a server.

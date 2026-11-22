@@ -59,9 +59,10 @@ function checkChapter(chId) {
     if (!Array.isArray(c.slides) || !c.slides.length) err('needs slides: [[slideNumber, "title"], …]');
     else c.slides.forEach(s => { if (!Number.isInteger(s[0]) || !s[1]) err(`bad slide link ${JSON.stringify(s)}`); });
     const vs = c.variants || [];
+    if (c.lead !== undefined && !vs.some(v => v.type === c.lead)) err(`lead "${c.lead}" is not the type of any version`);
     if (vs.length < 2) err(`only ${vs.length} version(s); a miss must lead to a different version (need at least 2, aim for 3–4)`);
     else if (vs.length < 3) warn('only 2 versions (aim for 3–4)');
-    if (vs.length && vs.every(v => v.type === vs[0].type) && vs.length > 2 && vs[0].type !== 'loop') warn('every version is the same type; mix in another type');
+    if (vs.length && vs.every(v => v.type === vs[0].type) && vs.length > 2 ) warn('every version is the same type; mix in another type');
     vs.forEach((v, vi) => {
       where.length = 2; where.push(`version ${vi + 1} (${v.type})`);
       typesUsed[v.type] = (typesUsed[v.type] || 0) + 1;

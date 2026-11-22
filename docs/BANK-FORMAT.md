@@ -64,6 +64,7 @@ Bump the `?v=` on any script tag you change so browsers fetch the new file.
     figcap: 'Source line for the figure', // optional
   },
   variants: [ /* 3–4 versions of the problem, below */ ],
+  lead: 'loop',                      // optional: serve versions of this type first (see the loop type)
 }
 ```
 
@@ -125,8 +126,10 @@ closed, how to count minus signs) and draws one correct loop.
   skips a middle step still passes.
 - List every true direct link among the pieces, including ones outside the loop (Greenhouse gases + Arctic temperature),
   or a correct arrow will be marked wrong.
-- **Parallel versions:** give the concept several `loop` versions with different systems (a miss leads to a new one).
-  Mix reinforcing and balancing loops.
+- **Parallel versions:** give the concept several `loop` versions with different systems, mixing reinforcing and
+  balancing loops, and set `lead: 'loop'` on the concept. Each student then gets the loop versions first (in their own
+  shuffled order), so a miss leads to a parallel loop; the concept's other versions follow only after every loop version.
+  Add new versions at the END of `variants` so saved tries keep pointing at the right version.
 - The checker runs `sol` through the grader, and confirms that flipping a sign or choosing the wrong R/B is rejected.
 
 Charts available to `pick` and `review.fig` (from `charts.js`): `co2`, `emis`, `temp`, `phx`, `phanda`, `ph`, `donut`.
