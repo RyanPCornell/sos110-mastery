@@ -35,6 +35,8 @@ a{color:var(--gold)}
 .mb-chip em{font:italic 800 13px var(--serif)}
 .mb-mini{width:30px; height:30px}
 .mb-stripes{height:5px; display:flex}
+/* Chapter 10 (Systems and Cycles): slider tracks and other stripe gradients use the four cycle colours instead of the warming stripes */
+body[data-ch="ch10"]{--s1:#3f6f8f; --s2:#4f8a8a; --s3:#2d6a4f; --s4:#b08a43; --s5:#8a6a4a; --s6:#6b5443}
 .mb-stripes i{flex:1}
 
 /* ── buttons ── */

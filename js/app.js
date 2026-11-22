@@ -43,6 +43,16 @@
   const secOf = (ch, c) => ch.sections.find(s => s.id === c.sec);
   const stripes = (n) => { const t = CH.D.temp, vmin = Math.min(...t.map(q => q[1])), vmax = Math.max(...t.map(q => q[1])); const step = Math.max(1, Math.floor(t.length / n));
     return t.filter((q, i) => i % step === 0).map(q => `<i style="background:${CH.stripe((q[1] - vmin) / (vmax - vmin))}"></i>`).join(''); };
+  /* Each chapter has its own thin band under the header and along the chapter card. Chapter 11 uses the warming stripes
+     (global temperature, one stripe per year); Chapter 10 uses the four biogeochemical cycles it teaches (water, nitrogen,
+     phosphorus, carbon), each colour flowing into the next and back around. A chapter without a theme gets the stripes. */
+  const CYCLES = ['#3f6f8f', '#2d6a4f', '#b08a43', '#6b5443'];
+  const cycleBand = n => { let s = ''; const reps = Math.max(2, Math.round(n / 22)); for (let r = 0; r < reps; r++) CYCLES.forEach((c, k) => { s += `<i style="background:linear-gradient(90deg,${c},${CYCLES[(k + 1) % CYCLES.length]})"></i>`; }); return s; };
+  const THEMES = { ch11: stripes, ch10: cycleBand };
+  const bandFor = (ch, n) => (ch && THEMES[ch.id] || stripes)(n);
+  const curCh = () => { const m = (location.hash || '').match(/^#\/(ch\d+)/); return m && CHS[m[1]] ? CHS[m[1]] : null; };
+  // the chapter the header's gradebook link and grade ring refer to: the one on screen, else the one worked on most recently
+  const homeCh = () => curCh() || Object.values(CHS).reduce((a, c) => ((S.ch[c.id] || {}).act || 0) > ((S.ch[a.id] || {}).act || 0) ? c : a, CHS.ch11 || Object.values(CHS)[0]);
   function ring(pct, size, label) {
     const r = 42, c = 2 * Math.PI * r, off = c * (1 - pct / 100);
     return `<svg class="ring" viewBox="0 0 100 100" width="${size}" height="${size}" role="img" aria-label="${pct}% ${label || ''}"><circle cx="50" cy="50" r="${r}" fill="none" stroke="#efe6d0" stroke-width="7"/>`
@@ -53,11 +63,12 @@
 
   /* ── header ── */
   function header(crumbs) {
-    const st = S.student, ch = CHS.ch11, sg = st ? stats(ch) : null;
+    const st = S.student, cur = curCh(), ch = homeCh(), sg = st ? stats(ch) : null;
+    document.body.dataset.ch = cur ? cur.id : '';
     hdr.innerHTML = `<div class="mb-topin"><a class="mb-brand" href="#/"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15" fill="#fffaf0" stroke="#3b3222" stroke-width="1.6"/><circle cx="17" cy="17" r="11.5" fill="none" stroke="#8a6a2f" stroke-width="1" stroke-dasharray="2 2.4"/><path d="M17 5.5L19.6 17L17 28.5L14.4 17Z" fill="#3b3222"/><path d="M5.5 17L17 14.6L28.5 17L17 19.4Z" fill="#a8483f"/></svg><span><small>SOS 110</small><b>Mastery</b></span></a>`
       + `<nav class="mb-crumb" aria-label="Breadcrumb">${(crumbs || []).map((c, i) => (i ? '<i>/</i>' : '') + (c[1] ? `<a href="${c[1]}">${esc(c[0])}</a>` : `<span>${esc(c[0])}</span>`)).join('')}</nav>`
-      + (st ? `<div class="mb-who"><a class="btn ghost sm" href="#/ch11/grades">Gradebook</a><button class="mb-chip" data-me title="Your account and progress">${ring(sg.pct, 30)}<em>${esc(st.name.split(' ')[0])}</em></button></div>` : '')
-      + `</div><div class="mb-stripes" aria-hidden="true">${stripes(90)}</div>`;
+      + (st ? `<div class="mb-who"><a class="btn ghost sm" href="#/${ch.id}/grades">Gradebook</a><button class="mb-chip" data-me title="Your account and progress: Chapter ${ch.num}, ${sg.pct}% mastered">${ring(sg.pct, 30)}<em>${esc(st.name.split(' ')[0])}</em></button></div>` : '')
+      + `</div><div class="mb-stripes" aria-hidden="true">${bandFor(cur, 90)}</div>`;
     const me = $('[data-me]', hdr); if (me) me.onclick = accountMenu;
   }
 
@@ -80,7 +91,7 @@
 
   function loadModal() {
     modal(`<div class="eb">Load progress</div><h2 class="h2" style="margin-top:4px">Paste your save code</h2><p style="font:14px/1.6 Merriweather,serif;margin:8px 0 0">This replaces any progress saved in this browser.</p><textarea placeholder="Paste the code here"></textarea><div class="row"><button class="btn sm" data-go>Load</button><button class="btn ghost sm" data-close>Cancel</button></div>`,
-      (m2, close2) => { setTimeout(() => $('textarea', m2).focus(), 30); $('[data-go]', m2).onclick = () => { try { const s = JSON.parse(decodeURIComponent(escape(atob($('textarea', m2).value.replace(/\s/g, ''))))); if (!s || s.v !== 1 || !s.student) throw 0; S = s; save(); close2(); toast('Progress loaded'); if (!location.hash || location.hash === '#/') location.hash = '#/ch11'; route(); } catch (e) { toast('That code could not be read. Check that you copied all of it.'); } }; });
+      (m2, close2) => { setTimeout(() => $('textarea', m2).focus(), 30); $('[data-go]', m2).onclick = () => { try { const s = JSON.parse(decodeURIComponent(escape(atob($('textarea', m2).value.replace(/\s/g, ''))))); if (!s || s.v !== 1 || !s.student) throw 0; S = s; save(); close2(); toast('Progress loaded'); route(); } catch (e) { toast('That code could not be read. Check that you copied all of it.'); } }; });
   }
 
   /* ── welcome ── */
@@ -89,11 +100,10 @@
     const band = t.map((q, i) => `<rect x="${(50 + i * bw).toFixed(2)}" y="292" width="${(bw + .4).toFixed(2)}" height="42" fill="${CH.stripe((q[1] - vmin) / (vmax - vmin))}"/>`).join('');
     const lats = [-60, -30, 0, 30, 60].map(a => { const y = 168 - 96 * Math.sin(a * Math.PI / 180), rx = 96 * Math.cos(a * Math.PI / 180); return `<ellipse cx="260" cy="${y.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${(rx * .16).toFixed(1)}" fill="none" stroke="#3b3222" stroke-width=".8" opacity=".5"/>`; }).join('');
     const lons = [-60, -30, 0, 30, 60].map(a => `<ellipse cx="260" cy="168" rx="${(96 * Math.abs(Math.sin(a * Math.PI / 180))).toFixed(1)}" ry="96" fill="none" stroke="#3b3222" stroke-width=".8" opacity=".5"/>`).join('');
-    return `<svg viewBox="0 0 520 420" role="img" aria-label="Plate eleven: a hand-drawn globe above the warming stripes, global temperature 1850 to 2025">
+    return `<svg viewBox="0 0 520 420" role="img" aria-label="A hand-drawn globe above the warming stripes, global temperature 1850 to 2025">
       <defs><filter id="plN" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="6"/><feDisplacementMap in="SourceGraphic" scale="2.4"/></filter>
       <radialGradient id="plG" cx=".4" cy=".35"><stop offset="0" stop-color="#eef3f2"/><stop offset=".7" stop-color="#c9d8de"/><stop offset="1" stop-color="#9fb3c4"/></radialGradient></defs>
       <rect x="8" y="8" width="504" height="404" rx="6" fill="#fbf5e6" stroke="#3b3222" stroke-width="2"/><rect x="18" y="18" width="484" height="384" rx="3" fill="none" stroke="#8a6a2f" stroke-width="1"/>
-      <text x="260" y="50" text-anchor="middle" style="font:800 11px Inter;letter-spacing:.32em;fill:#8a6a2f">PLATE XI · CLIMATE</text>
       <g filter="url(#plN)"><circle cx="260" cy="168" r="96" fill="url(#plG)" stroke="#3b3222" stroke-width="1.8"/>${lats}${lons}
       <path d="M164 168h192" stroke="#a8483f" stroke-width="1.2" stroke-dasharray="4 3" opacity=".8"/></g>
       <circle cx="260" cy="168" r="112" fill="none" stroke="#7f97ad" stroke-width="1" stroke-dasharray="2 5"/>
@@ -114,7 +124,7 @@
       + `<label for="ar">ASURITE ID <span style="font-weight:600;letter-spacing:0;text-transform:none">(optional, printed on your report)</span></label><input class="inp" id="ar" name="ar" autocomplete="username" placeholder="e.g. jsmith12">`
       + `<div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn" type="submit">Begin</button><button class="btn ghost" type="button" data-load>I have a save code</button></div>`
       + `<p class="wl-note">Your progress is saved in this browser only; nothing is sent anywhere. Use a save code to move it to another computer.</p></form></div></section>`;
-    $('[data-form]').onsubmit = e => { e.preventDefault(); const nm = $('#nm').value.trim(); if (!nm) return; S.student = { name: nm, id: $('#ar').value.trim(), at: Date.now() }; save(); location.hash = '#/ch11'; };
+    $('[data-form]').onsubmit = e => { e.preventDefault(); const nm = $('#nm').value.trim(); if (!nm) return; S.student = { name: nm, id: $('#ar').value.trim(), at: Date.now() }; save(); history.replaceState(null, '', '#/'); route(); };
     $('[data-load]').onclick = loadModal;
     setTimeout(() => $('#nm') && $('#nm').focus(), 50);
   }
@@ -125,7 +135,7 @@
     const chs = Object.values(CHS);
     app.innerHTML = `<section class="home"><div class="eb">SOS 110 · Your chapters</div><h1 class="h1">Welcome back, ${esc(S.student.name.split(' ')[0])}.</h1><p class="lede">Each chapter has twenty concepts. Master them all for full credit.</p>`
       + `<div class="tiles" style="margin-top:24px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">${chs.map(ch => { const s = stats(ch);
-        return `<a class="tile ${s.pct >= 100 ? 'ok' : s.tried ? 'wip' : ''}" href="#/${ch.id}" style="align-items:center">${ring(s.pct, 74, 'MASTERED')}<div><div class="eb">Chapter ${ch.num} · Plate ${ch.roman}</div><div class="tt" style="font-size:22px">${ch.title}</div><div class="ts">${ch.subtitle}</div><div class="st"><i></i>${s.mastered} of ${s.n} concepts mastered</div></div></a>`; }).join('')}</div>`
+        return `<a class="tile ${s.pct >= 100 ? 'ok' : s.tried ? 'wip' : ''}" href="#/${ch.id}" style="align-items:center">${ring(s.pct, 74, 'MASTERED')}<div><div class="eb">Chapter ${ch.num}</div><div class="tt" style="font-size:22px">${ch.title}</div><div class="ts">${ch.subtitle}</div><div class="st"><i></i>${s.mastered} of ${s.n} concepts mastered</div></div></a>`; }).join('')}</div>`
       + `<p class="gb-foot" style="margin-top:22px">More chapters will appear here as they are added.</p></section>`;
   }
 
@@ -135,11 +145,11 @@
     const s = stats(ch), cs = chState(ch.id);
     const next = ch.concepts.findIndex(c => !(cs.c[c.id] && cs.c[c.id].m));
     const cta = s.mastered === s.n ? 'Review the chapter' : s.tried ? 'Continue: concept ' + (next + 1) : 'Start with concept 1';
-    app.innerHTML = `<section class="home"><div class="home-hero"><div class="card rule hero-l"><div class="eb">Chapter ${ch.num} · Plate ${ch.roman}</div><h1 class="h1">${ch.title}: ${ch.subtitle}</h1>`
+    app.innerHTML = `<section class="home"><div class="home-hero"><div class="card rule hero-l"><div class="eb">Chapter ${ch.num}</div><h1 class="h1">${ch.title}: ${ch.subtitle}</h1>`
       + `<p class="lede" style="margin-top:10px">Twenty concepts from the Chapter ${ch.num} lecture. Each one has several versions: answer one correctly to master it. Miss it, and you will see why, review the material, and get a new version to try.</p>`
       + `<div class="meta"><span><b>${s.n}</b> concepts</span><span><b>${ch.concepts.reduce((a, c) => a + c.variants.length, 0)}</b> problem versions</span><span><b>${ch.sections.length}</b> sections</span></div>`
       + `<div class="hero-cta"><a class="btn" href="#/${ch.id}/${Math.max(0, next) + 1}">${cta} ▸</a><a class="btn ghost" href="#/${ch.id}/grades">Open gradebook</a><a class="btn ghost" href="${ch.deck}" target="_blank" rel="noopener">Lecture slides ↗</a></div>`
-      + `<div class="hero-band" aria-hidden="true">${stripes(60)}</div></div>`
+      + `<div class="hero-band" aria-hidden="true">${bandFor(ch, 60)}</div></div>`
       + `<div class="card rule grade"><div class="gl">Chapter grade</div>${ring(s.pct, 168, 'MASTERED')}<div class="gs">${s.mastered} of ${s.n} concepts mastered</div>`
       + `<div class="stats"><div><b>${s.tried}</b><span>attempted</span></div><div><b>${s.tried ? s.firstPct + '%' : '–'}</b><span>first try</span></div><div><b>${fmtTime(s.time)}</b><span>practice</span></div></div></div></div>`
       + (s.mastered === s.n ? `<div class="done"><svg width="44" height="44" viewBox="0 0 46 46">${'<circle cx="23" cy="23" r="21" fill="#2f7a40"/><path d="M13 24l7 7 13-15" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'}</svg><div><b>Chapter ${ch.num} mastered.</b><div style="font:14px Merriweather,serif;color:#5e5340">Every concept is complete. Open the gradebook to print or save your report.</div></div></div>` : '')
