@@ -31,8 +31,9 @@ Live site: <https://ryanpcornell.github.io/sos110-mastery/>
 - `js/app.js`: routing, mastery logic, gradebook, save codes
 
 ## Adding a chapter
-Write `js/bank-chNN.js` registering `window.MB_CHAPTERS.chNN = {id, num, roman, title, subtitle, deck, sections, concepts}`
-(same shape as Chapter 11), add its `<script>` tag to `index.html`, and it appears on the course page.
+See **[docs/BANK-FORMAT.md](docs/BANK-FORMAT.md)**: the bank format, the problem types, content rules, and who edits
+which files. Write `js/bank-chNN.js`, add its `<script>` tag to `index.html`, then run `node tools/check_bank.js chNN`
+(zero errors) before committing. `js/bank-ch11.js` is the reference bank.
 
 ## Canvas (next step)
 Grade passback needs a small server: an LTI 1.3 tool launch (student identity from Canvas) plus the Assignment and
