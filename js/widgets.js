@@ -300,6 +300,233 @@ const WG = (function () {
     };
   }
 
+  /* ── build a causal loop diagram ──
+     Students place pieces, draw + and − arrows between them, and say whether their loop is reinforcing or
+     balancing. Grading follows the Chapter 10 Loop Lab: a relationship is real if the bank lists it, or if a chain
+     of up to three listed arrows implies it (the sign multiplied through), so a student may skip a step
+     (Sea ice − Sunlight absorbed, leaving out albedo) and still be right. */
+  function loopTruth(q) {
+    const B = {}; q.links.forEach(([a, b, s]) => { B[a + '>' + b] = s === '-' ? -1 : 1; });
+    const T = Object.assign({}, B); let cur = Object.assign({}, B);
+    for (let pass = 0; pass < 2; pass++) {
+      const add = {};
+      Object.keys(cur).forEach(k1 => { const [a, m] = k1.split('>');
+        Object.keys(B).forEach(k2 => { const [m2, c] = k2.split('>'); if (m2 !== m || c === a) return;
+          const key = a + '>' + c; if (B[key] !== undefined) return;
+          const s = cur[k1] * B[k2], prev = add[key] !== undefined ? add[key] : T[key];
+          add[key] = prev === undefined || prev === s ? s : 0; });   // 0: two chains disagree, so either sign is defensible
+      });
+      Object.keys(add).forEach(k => { T[k] = add[k]; }); cur = add;
+    }
+    return T;
+  }
+  // every simple cycle in a list of links [{a, b, s}]; each cycle starts at its alphabetically first piece
+  function loopCycles(L) {
+    const ids = [...new Set(L.flatMap(l => [l.a, l.b]))].sort(), adj = {}, out = [];
+    ids.forEach(i => { adj[i] = []; }); L.forEach((l, k) => adj[l.a].push(k));
+    const dfs = (st, cur, path, eds) => { if (out.length > 60 || path.length > 8) return;
+      adj[cur].forEach(k => { const j = L[k].b;
+        if (j === st) { out.push({ n: path.slice(), e: eds.concat(k) }); return; }
+        if (j > st && !path.includes(j)) dfs(st, j, path.concat(j), eds.concat(k)); }); };
+    ids.forEach(i => dfs(i, i, [i], []));
+    return out.map(c => Object.assign(c, { neg: c.e.filter(k => L[k].s < 0).length }));
+  }
+  // pure grader (also used by tools/check_bank.js, and later by the server): links = [{a, b, s: 1|-1}], kind = 'R'|'B'
+  function loopGrade(q, links, kind) {
+    const T = loopTruth(q), N = id => q.pieces[id], fb = [];
+    // lower-case a name mid-sentence, but keep proper nouns and chemical formulas (Arctic, Earth’s, CO₂)
+    const lc = id => { const t = N(id); return /^(Arctic|Antarctic|Earth|Greenland|[A-Z]{2}|[A-Z][A-Z₀-₉])/.test(t) ? t : t[0].toLowerCase() + t.slice(1); };
+    const inSystem = id => Object.keys(T).some(k => k.split('>').includes(id));
+    const cls = links.map(l => { const t = T[l.a + '>' + l.b]; return t === undefined ? 'bad' : t === 0 || t === l.s ? 'ok' : 'sign'; });
+    const outside = new Set();
+    links.forEach((l, k) => {
+      if (cls[k] === 'bad') {
+        const off = [l.a, l.b].filter(id => !inSystem(id));
+        if (off.length) off.forEach(id => outside.add(id));
+        else if (T[l.b + '>' + l.a] !== undefined) fb.push(`${N(l.a)} → ${N(l.b)} points the wrong way. Does ${lc(l.a)} change ${lc(l.b)}, or the other way around?`);
+        else fb.push(`${N(l.a)} → ${N(l.b)} is not a cause-and-effect link in this system.`);
+      }
+      if (cls[k] === 'sign') fb.push(`Check the sign on ${N(l.a)} → ${N(l.b)}: when ${lc(l.a)} goes up, does ${lc(l.b)} go up (+) or down (−)?`);
+    });
+    outside.forEach(id => fb.unshift(`${N(id)} is not part of this feedback.`));
+    const okIdx = links.map((l, k) => k).filter(k => cls[k] === 'ok'), real = okIdx.map(k => links[k]), cyc = loopCycles(real);
+    const through = cyc.filter(c => q.goal.must.every(m => c.n.includes(m)));
+    const goal = through.find(c => (c.neg % 2 ? 'B' : 'R') === q.goal.kind) || through[0] || null;
+    if (!goal) {
+      const anyLoop = loopCycles(links);
+      const best = anyLoop.sort((x, y) => q.goal.must.filter(m => y.n.includes(m)).length - q.goal.must.filter(m => x.n.includes(m)).length)[0];
+      const missing = best ? q.goal.must.filter(m => !best.n.includes(m)) : [];
+      if (best && missing.length) fb.push(`Your loop leaves out ${missing.map(m => lc(m)).join(' and ')}. The feedback has to pass through it.`);
+      else if (!best) fb.push(`Your arrows do not close a loop yet. Follow them from ${lc(q.goal.must[0])}: they should lead back to where they started.`);
+    }
+    const neg = goal ? goal.neg : null;
+    if (kind !== q.goal.kind) fb.push(goal
+      ? `Count the minus signs around your loop: ${neg === 0 ? 'none' : neg === 1 ? 'one' : neg}. An even number (zero counts) makes a reinforcing loop; an odd number makes a balancing loop.`
+      : 'To name a loop, count its minus signs: an even number (zero counts) makes it reinforcing; an odd number makes it balancing.');
+    const ok = !cls.some(c => c !== 'ok') && !!goal && kind === q.goal.kind;
+    return { ok, cls, goal, goalLinks: goal ? goal.e.map(k => okIdx[k]) : null, fb: ok ? [] : fb };
+  }
+
+  function loop(q, host, ctx) {
+    const W = 860, H = 480, NW = 196, ids = Object.keys(q.pieces), order = shuffle(ids, ctx.rng);
+    const SLOTS = [[.17, .19], [.5, .15], [.83, .19], [.86, .52], [.83, .84], [.5, .87], [.17, .84], [.14, .52], [.5, .51]].map(([x, y]) => [x * W, y * H]);
+    const lines = t => { const out = [], w = String(t).split(' '); let cur = ''; w.forEach(x => { if (cur && (cur + ' ' + x).length > 19) { out.push(cur); cur = x; } else cur = cur ? cur + ' ' + x : x; }); out.push(cur); return out; };
+    const hOf = id => 26 + 21 * lines(q.pieces[id]).length;
+    const clampN = (id, x, y) => { const h = hOf(id); return { x: Math.max(NW / 2 + 8, Math.min(W - NW / 2 - 8, x)), y: Math.max(h / 2 + 8, Math.min(H - h / 2 - 8, y)) }; };
+    let built = false, nodes = {}, links = [], mode = 'p', pend = null, kind = null, locked = false, marks = null, drag = null, rubber = null, goalE = null;
+    const freeSlot = () => { const taken = Object.values(nodes); let best = SLOTS[0], bd = -1;
+      SLOTS.forEach(s => { const d = taken.length ? Math.min(...taken.map(n => Math.hypot(n.x - s[0], n.y - s[1]))) : 999; if (d > bd + 40) { bd = d; best = s; } });
+      return best; };
+    (q.start || []).forEach(id => { const s = freeSlot(); nodes[id] = clampN(id, s[0], s[1]); });
+
+    const TOOLS = [['p', '<b class="lp-plus">+</b> arrow', 'Plus arrow: the two pieces move the same way'], ['n', '<b class="lp-minus">−</b> arrow', 'Minus arrow: the two pieces move in opposite ways'], ['m', 'Move', 'Move pieces'], ['x', 'Erase', 'Erase: click a piece or an arrow’s sign to remove it']];
+    host.innerHTML = `<div class="lp">
+      <div class="lp-tray" role="group" aria-label="Pieces you can add"><span class="lp-tl">Pieces</span>${order.map(id => `<button type="button" class="lp-piece" data-p="${id}">${esc(q.pieces[id])}</button>`).join('')}</div>
+      <div class="lp-tools" role="toolbar" aria-label="Drawing tools">${TOOLS.map(([m, lab, tip]) => `<button type="button" data-mode="${m}" title="${tip}" aria-label="${tip}" aria-pressed="${m === mode}">${lab}</button>`).join('')}<span class="sp"></span><button type="button" data-clear>Clear</button></div>
+      <div class="lp-canvas"><svg viewBox="0 0 ${W} ${H}" role="application" aria-label="Loop diagram canvas"></svg></div>
+      <p class="calcnote lp-help" data-help></p>
+      <div class="lp-status" data-status></div>
+      <div class="lp-kind" role="radiogroup" aria-label="What kind of loop did you build?"><span class="lp-kq">Your loop is</span>
+        <button type="button" role="radio" aria-checked="false" data-k="R"><b>R</b> Reinforcing</button><button type="button" role="radio" aria-checked="false" data-k="B"><b>B</b> Balancing</button></div>
+      <div class="lp-fb" data-lfb></div><div data-sol></div><ul class="sr-only" data-list aria-label="Arrows in your diagram"></ul><div class="sr-only" data-say aria-live="polite"></div></div>`;
+    const svg = $('svg', host), status = $('[data-status]', host);
+    const HELP = { p: 'Drag from one piece to another to draw a <b>+</b> arrow, or click one piece and then the other. <b>+</b> means they move the same way: one goes up, the other goes up.',
+      n: 'Drag from one piece to another to draw a <b>−</b> arrow, or click one piece and then the other. <b>−</b> means they move in opposite ways: one goes up, the other goes down.',
+      m: 'Drag pieces to tidy your diagram. With the keyboard, focus a piece and use the arrow keys.', x: 'Click a piece or an arrow’s sign to remove it.' };
+    const say = t => { $('[data-say]', host).textContent = t; };
+    // describe a cycle starting from the piece the question names, so it reads like the prompt
+    const tour = c => { const k = Math.max(0, c.n.indexOf(q.goal.must.find(m => c.n.includes(m)))), n = c.n.slice(k).concat(c.n.slice(0, k));
+      return n.map(id => esc(q.pieces[id])).join(' → ') + ' → back to ' + esc(q.pieces[n[0]]); };
+
+    const edge = (n, h, tx, ty, pad) => { const dx = tx - n.x, dy = ty - n.y, hw = NW / 2 + pad, hh = h / 2 + pad; const t = Math.min(hw / Math.abs(dx || 1e-6), hh / Math.abs(dy || 1e-6)); return [n.x + dx * t, n.y + dy * t]; };
+    const geo = (N, a, b) => { const A = N[a], B = N[b], dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1, bend = Math.min(56, d * .16);
+      const cx = (A.x + B.x) / 2 - dy / d * bend, cy = (A.y + B.y) / 2 + dx / d * bend, p0 = edge(A, A.h, cx, cy, 5), p1 = edge(B, B.h, cx, cy, 12);
+      return { d: `M${p0[0].toFixed(1)} ${p0[1].toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${p1[0].toFixed(1)} ${p1[1].toFixed(1)}`, mx: .25 * p0[0] + .5 * cx + .25 * p1[0], my: .25 * p0[1] + .5 * cy + .25 * p1[1] }; };
+    const COL = { ink: '#3b3222', grn: '#2f7a40', red: '#a8483f', gold: '#b08a43' };
+    const defs = pre => `<defs>${Object.entries(COL).map(([k, c]) => `<marker id="${pre}${k}" viewBox="0 0 12 12" refX="3" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L12 6L0 12z" fill="${c}"/></marker>`).join('')}</defs>`;
+    // draw a diagram: N = {id: {x, y, h}}, L = [{a, b, s}], o = {marks, interactive, hi: set of highlighted link indexes, pre}
+    function render(N, L, o) {
+      let s = defs(o.pre);
+      L.forEach((l, k) => { if (o.hi && o.hi.has(k)) { const g = geo(N, l.a, l.b); s += `<path d="${g.d}" fill="none" stroke="${COL.gold}" stroke-width="14" stroke-linecap="round" opacity=".28"/>`; } });
+      L.forEach((l, k) => { const g = geo(N, l.a, l.b), m = o.marks && o.marks[k], col = m ? (m === 'ok' ? 'grn' : 'red') : 'ink';
+        s += `<path d="${g.d}" fill="none" stroke="${COL[col]}" stroke-width="3" ${m === 'bad' ? 'stroke-dasharray="9 6"' : ''} marker-end="url(#${o.pre}${col})" ${o.interactive ? `data-lp="${k}"` : ''} class="lp-edge"/>`;
+        const lab = `${q.pieces[l.a]} ${l.s > 0 ? 'plus' : 'minus'} ${q.pieces[l.b]}`;
+        s += `<g class="lp-badge ${l.s > 0 ? 'pos' : 'neg'}${m ? ' m-' + m : ''}" transform="translate(${g.mx.toFixed(1)} ${g.my.toFixed(1)})" ${o.interactive ? `data-l="${k}" tabindex="0" role="button" aria-label="Arrow: ${esc(lab)}. Enter flips the sign; Delete removes it."` : ''}>`
+          + `<circle r="15"/><text y="7" text-anchor="middle">${l.s > 0 ? '+' : '−'}</text>${m && m !== 'ok' ? `<g transform="translate(14 -14)"><circle r="9" class="x"/><text y="4.5" text-anchor="middle" class="x">✕</text></g>` : ''}</g>`; });
+      Object.keys(N).forEach(id => { const n = N[id], ls = lines(q.pieces[id]), h = n.h;
+        s += `<g class="lp-node${pend === id && o.interactive ? ' pend' : ''}" transform="translate(${n.x.toFixed(1)} ${n.y.toFixed(1)})" ${o.interactive ? `data-n="${id}" tabindex="0" role="button" aria-label="${esc(q.pieces[id])}${pend === id ? ', arrow starts here' : ''}"` : ''}>`
+          + `<rect x="${-NW / 2}" y="${-h / 2}" width="${NW}" height="${h}" rx="12"/>${ls.map((t, i) => `<text y="${(i - (ls.length - 1) / 2) * 21 + 6}" text-anchor="middle">${esc(t)}</text>`).join('')}</g>`; });
+      return s;
+    }
+    const withH = N => { const o = {}; Object.keys(N).forEach(id => { o[id] = { x: N[id].x, y: N[id].y, h: hOf(id) }; }); return o; };
+
+    function draw(focus) {
+      const cyc = marks ? [] : loopCycles(links), big = cyc.sort((x, y) => y.n.length - x.n.length)[0];
+      let s = render(withH(nodes), links, { marks, interactive: !locked, hi: marks ? goalE : big ? new Set(big.e) : null, pre: 'lpm' });
+      if (rubber) { const A = nodes[rubber.from]; s += `<path d="M${A.x} ${A.y} L${rubber.x} ${rubber.y}" stroke="${mode === 'n' ? '#9a5a47' : '#2f4a66'}" stroke-width="3" stroke-dasharray="7 6" fill="none" pointer-events="none"/>`; }
+      svg.innerHTML = s;
+      $$('.lp-piece', host).forEach(b => { const on = !!nodes[b.dataset.p]; b.classList.toggle('on', on); b.setAttribute('aria-label', q.pieces[b.dataset.p] + (on ? ' (on the canvas)' : '')); });
+      $('[data-help]', host).innerHTML = locked ? '' : HELP[mode] + (links.length && mode !== 'x' ? ' Click a sign to flip it.' : '');
+      if (!marks) status.innerHTML = big ? `<span class="lp-ring">↻</span> Your arrows close a loop: ${tour(big)}.`
+        : Object.keys(nodes).length < 2 ? 'Add pieces from the list above, then connect them with arrows.' : 'No closed loop yet: keep following the arrows until they lead back to where they started.';
+      $('[data-list]', host).innerHTML = links.map(l => `<li>${esc(q.pieces[l.a])} ${l.s > 0 ? 'plus' : 'minus'} ${esc(q.pieces[l.b])}</li>`).join('');
+      if (focus) { const el = $(focus, svg); if (el) el.focus({ preventScroll: true }); }
+      if (built) ctx.changed();
+    }
+    const addNode = (id, x, y) => { if (nodes[id] || locked) return; const s = x === undefined ? freeSlot() : [x, y]; nodes[id] = clampN(id, s[0], s[1]); say(q.pieces[id] + ' added.'); draw(`[data-n="${id}"]`); };
+    const removeNode = id => { delete nodes[id]; links = links.filter(l => l.a !== id && l.b !== id); if (pend === id) pend = null; draw(); say(q.pieces[id] + ' removed.'); };
+    const addLink = (a, b) => { if (a === b) return; const s = mode === 'n' ? -1 : 1, k = links.findIndex(l => l.a === a && l.b === b);
+      if (k >= 0) links[k].s = s; else links.push({ a, b, s }); pend = null; draw(`[data-n="${b}"]`);
+      say(`Arrow: ${q.pieces[a]} ${s > 0 ? '+' : '−'} ${q.pieces[b]}.`); };
+    const flip = k => { links[k].s *= -1; draw(`[data-l="${k}"]`); };
+    const removeLink = k => { links.splice(k, 1); draw(); };
+    const tapNode = id => {
+      if (mode === 'x') { removeNode(id); return; }
+      if (mode === 'm') return;
+      if (pend && pend !== id) { addLink(pend, id); return; }
+      pend = pend === id ? null : id; draw(`[data-n="${id}"]`);
+      if (pend) say(`Arrow starts at ${q.pieces[id]}. Now choose the piece it points to.`);
+    };
+    const pt = e => { const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(svg.getScreenCTM().inverse()); };
+    const nodeAt = e => { const el = document.elementFromPoint(e.clientX, e.clientY), g = el && el.closest('[data-n]'); return g && svg.contains(g) ? g.dataset.n : null; };
+
+    svg.addEventListener('pointerdown', e => {
+      if (locked || e.button > 0) return;
+      const badge = e.target.closest('[data-l]'), edgeP = e.target.closest('[data-lp]'), node = e.target.closest('[data-n]');
+      if (badge || (edgeP && mode === 'x')) { e.preventDefault(); const k = +(badge || edgeP).dataset[badge ? 'l' : 'lp']; mode === 'x' ? removeLink(k) : flip(k); return; }
+      if (!node) { if (pend) { pend = null; draw(); } return; }
+      e.preventDefault(); const p = pt(e), id = node.dataset.n;
+      drag = { id, x0: p.x, y0: p.y, ox: nodes[id].x, oy: nodes[id].y, moved: false };
+      svg.setPointerCapture(e.pointerId);
+    });
+    svg.addEventListener('pointermove', e => {
+      if (!drag) return; const p = pt(e);
+      if (!drag.moved && Math.hypot(p.x - drag.x0, p.y - drag.y0) < 7) return; drag.moved = true;
+      if (mode === 'm') { nodes[drag.id] = clampN(drag.id, drag.ox + p.x - drag.x0, drag.oy + p.y - drag.y0); draw(); }
+      else if (mode !== 'x') { rubber = { from: drag.id, x: p.x, y: p.y }; draw(); }
+    });
+    const end = e => {
+      if (!drag) return; const d = drag; drag = null; const had = !!rubber; rubber = null;
+      if (!d.moved) { tapNode(d.id); return; }
+      if (had) { const to = nodeAt(e); if (to && to !== d.id) addLink(d.id, to); else draw(); }
+    };
+    svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', () => { drag = null; rubber = null; draw(); });
+    svg.addEventListener('keydown', e => {
+      if (locked) return;
+      const b = e.target.closest('[data-l]'), n = e.target.closest('[data-n]');
+      if (b) { const k = +b.dataset.l;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); flip(k); }
+        else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeLink(k); svg.focus(); } return; }
+      if (!n) return; const id = n.dataset.n;
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); tapNode(id); }
+      else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeNode(id); }
+      else if (e.key === 'Escape' && pend) { e.stopPropagation(); pend = null; draw(`[data-n="${id}"]`); say('Arrow cancelled.'); }
+      else if (/^Arrow/.test(e.key)) { e.preventDefault(); e.stopPropagation(); const st = 20, v = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];
+        nodes[id] = clampN(id, nodes[id].x + v[0], nodes[id].y + v[1]); draw(`[data-n="${id}"]`); }
+    });
+
+    // the tray: click a piece to place it, or drag it onto the canvas
+    $('.lp-tray', host).addEventListener('pointerdown', e => {
+      const c = e.target.closest('.lp-piece'); if (!c || locked || nodes[c.dataset.p] || e.button > 0) return;
+      const x0 = e.clientX, y0 = e.clientY; let fly = null;
+      const mv = ev => { if (!fly && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+        if (!fly) { fly = c.cloneNode(true); fly.className = 'lp-piece flying'; document.body.appendChild(fly); }
+        fly.style.left = (ev.clientX - 40) + 'px'; fly.style.top = (ev.clientY - 18) + 'px'; };
+      const up = ev => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up);
+        if (!fly) return; fly.remove(); c.__dragged = true; setTimeout(() => { c.__dragged = false; }, 60);
+        const r = svg.getBoundingClientRect(); if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) { const p = pt(ev); addNode(c.dataset.p, p.x, p.y); } };
+      document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up);
+    });
+    $('.lp-tray', host).addEventListener('click', e => { const c = e.target.closest('.lp-piece'); if (!c || locked || c.__dragged) return;
+      const id = c.dataset.p; if (nodes[id]) { const g = $(`[data-n="${id}"]`, svg); g && g.focus(); return; } addNode(id); });
+    $$('[data-mode]', host).forEach(b => b.onclick = () => { if (locked) return; mode = b.dataset.mode; pend = null; $$('[data-mode]', host).forEach(x => x.setAttribute('aria-pressed', x === b)); draw(); });
+    $('[data-clear]', host).onclick = () => { if (locked) return; const keep = {}; (q.start || []).forEach(id => { keep[id] = nodes[id]; }); nodes = keep; links = []; pend = null; draw(); say('Diagram cleared.'); };
+    const setKind = k => { if (locked) return; kind = k; $$('[data-k]', host).forEach(x => x.setAttribute('aria-checked', x.dataset.k === k)); ctx.changed(); };
+    $$('[data-k]', host).forEach(b => b.onclick = () => setKind(b.dataset.k));
+    $('.lp-kind', host).addEventListener('keydown', e => { if (/^Arrow(Left|Right|Up|Down)$/.test(e.key)) { e.preventDefault(); e.stopPropagation(); const nk = kind === 'R' ? 'B' : 'R'; setKind(nk); $(`[data-k="${nk}"]`, host).focus(); } });
+    draw(); built = true;
+
+    return {
+      ready: () => links.length >= 2 && !!kind,
+      check() {
+        const g = loopGrade(q, links, kind); marks = g.cls; goalE = g.goalLinks ? new Set(g.goalLinks) : null; pend = null; draw();
+        status.innerHTML = g.goal ? `<span class="lp-ring">↻</span> Loop found: ${tour(g.goal)} (${g.goal.neg === 0 ? 'no' : g.goal.neg} minus sign${g.goal.neg === 1 ? '' : 's'}).` : '';
+        $('[data-lfb]', host).innerHTML = g.ok ? '' : `<div class="lp-fbh">What to look at</div><ul>${g.fb.map(t => `<li>${esc(t)}</li>`).join('')}</ul>`;
+        $$('[data-k]', host).forEach(b => { if (b.dataset.k === kind) b.classList.add(kind === q.goal.kind ? 'right' : 'wrong'); });
+        const n = g.cls.filter(c => c !== 'ok').length;
+        return { ok: g.ok, msg: g.ok ? '' : n ? `${n} arrow${n > 1 ? 's need' : ' needs'} another look.` : !g.goal ? 'the loop is not complete.' : 'check what kind of loop it is.' };
+      },
+      reveal() {
+        const sol = q.sol, cx = W / 2, cy = 190, rx = 290, ry = 130, N = {}, T = loopTruth(q);
+        sol.forEach((id, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / sol.length; N[id] = { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) * (sol.length === 3 ? 1.05 : 1) + (sol.length === 3 ? 30 : 0), h: hOf(id) }; });
+        const L = sol.map((id, i) => ({ a: id, b: sol[(i + 1) % sol.length], s: T[id + '>' + sol[(i + 1) % sol.length]] || 1 })), neg = L.filter(l => l.s < 0).length;
+        $('[data-sol]', host).innerHTML = `<div class="qfig lp-solfig"><div class="cap">One correct loop · ${q.goal.kind === 'R' ? 'Reinforcing' : 'Balancing'} (${neg === 0 ? 'no' : neg} minus sign${neg === 1 ? '' : 's'})</div><svg viewBox="0 0 ${W} 400" role="img" aria-label="Correct loop: ${esc(L.map(l => q.pieces[l.a] + (l.s > 0 ? ' plus ' : ' minus ')).join('') + q.pieces[sol[0]])}">${render(N, L, { pre: 'lps' })}</svg></div>`;
+        $$('[data-k]', host).forEach(b => { if (b.dataset.k === q.goal.kind) b.classList.add('right'); });
+      },
+      lock() { locked = true; host.querySelector('.lp').classList.add('locked'); draw(); },
+    };
+  }
+
   /* ── live pictures for the sliders ── */
   const VIZ = {
     // the greenhouse model: ΔT ≈ 3 °C × log2(CO2 / 280)
@@ -347,5 +574,5 @@ const WG = (function () {
     },
   };
 
-  return { mc, multi, fill, order, bins, match, slider, pick, slice, bars, figmc, diagram, VIZ, shuffle, esc };
+  return { mc, multi, fill, order, bins, match, slider, pick, slice, bars, figmc, diagram, loop, loopTruth, loopGrade, loopCycles, VIZ, shuffle, esc };
 })();

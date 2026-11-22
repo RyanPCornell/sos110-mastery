@@ -168,7 +168,7 @@
         + `<div class="qstem">${v.stem}</div>${v.hint ? `<div class="qhint"><button class="linkb" data-hint>Need a hint?</button><div class="hint" hidden>${v.hint}</div></div>` : ''}<div data-w></div><div data-fb></div>`
         + `<div class="qfoot"><button class="btn ghost sm" data-prev ${idx === 0 ? 'disabled' : ''}>◂ Previous</button><span class="sp"></span><span class="note" data-note>Press <span class="kbd">Enter</span> to check</span><button class="btn" data-check disabled>Check answer</button></div></article>`;
       const host = $('[data-w]', q);
-      api = WG[v.type](v, host, { rng: rngOf(hash(c.id + '|' + r.cur + '|' + r.tries.length)), changed: () => { $('[data-check]', q).disabled = !api.ready(); } });
+      api = WG[v.type](v, host, { rng: rngOf(hash(c.id + '|' + r.cur + '|' + r.tries.length)), changed: () => { if (api) $('[data-check]', q).disabled = !api.ready(); } });
       $('[data-check]', q).onclick = check;
       $('[data-prev]', q).onclick = () => go(idx - 1);
       const hb = $('[data-hint]', q); if (hb) hb.onclick = () => { $('.hint', q).hidden = !$('.hint', q).hidden; hb.textContent = $('.hint', q).hidden ? 'Need a hint?' : 'Hide the hint'; };
@@ -221,7 +221,7 @@
     };
     document.addEventListener('keydown', onKey); cleanup.push(() => document.removeEventListener('keydown', onKey));
   }
-  const TYPE = { mc: 'Multiple choice', multi: 'Select all that apply', fill: 'Fill in the blank', order: 'Put in order', bins: 'Sort', match: 'Match', slider: 'Interactive slider', pick: 'Read the chart', slice: 'Read the chart', bars: 'Build the chart', figmc: 'Choose the figure', diagram: 'Label the diagram' };
+  const TYPE = { mc: 'Multiple choice', multi: 'Select all that apply', fill: 'Fill in the blank', order: 'Put in order', bins: 'Sort', match: 'Match', slider: 'Interactive slider', pick: 'Read the chart', slice: 'Read the chart', bars: 'Build the chart', figmc: 'Choose the figure', diagram: 'Label the diagram', loop: 'Build the loop' };
   function railHTML(ch, idx) {
     const cs = chState(ch.id), s = stats(ch);
     return `<div class="rh"><b>Chapter ${ch.num}</b><span>${s.mastered}/${s.n}</span></div>` + ch.sections.map(sec => `<div class="rs" style="--c:${sec.c}">${sec.id} ${sec.title}</div>`

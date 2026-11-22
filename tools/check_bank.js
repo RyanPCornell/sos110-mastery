@@ -11,7 +11,7 @@ const fs = require('fs'), path = require('path'), vm = require('vm');
 const ROOT = path.join(__dirname, '..'), JS = path.join(ROOT, 'js');
 const only = process.argv[2];
 
-const TYPES = ['mc', 'multi', 'fill', 'order', 'bins', 'match', 'slider', 'pick', 'slice', 'bars', 'figmc', 'diagram'];
+const TYPES = ['mc', 'multi', 'fill', 'order', 'bins', 'match', 'slider', 'pick', 'slice', 'bars', 'figmc', 'diagram', 'loop'];
 let errors = 0, warnings = 0;
 
 function sandbox() {
@@ -61,7 +61,7 @@ function checkChapter(chId) {
     const vs = c.variants || [];
     if (vs.length < 2) err(`only ${vs.length} version(s); a miss must lead to a different version (need at least 2, aim for 3–4)`);
     else if (vs.length < 3) warn('only 2 versions (aim for 3–4)');
-    if (vs.length && vs.every(v => v.type === vs[0].type) && vs.length > 2) warn('every version is the same type; mix in another type');
+    if (vs.length && vs.every(v => v.type === vs[0].type) && vs.length > 2 && vs[0].type !== 'loop') warn('every version is the same type; mix in another type');
     vs.forEach((v, vi) => {
       where.length = 2; where.push(`version ${vi + 1} (${v.type})`);
       typesUsed[v.type] = (typesUsed[v.type] || 0) + 1;
@@ -72,10 +72,11 @@ function checkChapter(chId) {
   });
   where.length = 1;
   console.log(`  ${(ch.concepts || []).length} concepts, ${(ch.concepts || []).reduce((a, c) => a + (c.variants || []).length, 0)} versions; types: ${Object.entries(typesUsed).map(([k, n]) => k + ' ' + n).join(', ')}`);
-  const visual = ['slider', 'pick', 'slice', 'bars', 'figmc', 'diagram'].reduce((a, k) => a + (typesUsed[k] || 0), 0);
+  const visual = ['slider', 'pick', 'slice', 'bars', 'figmc', 'diagram', 'loop'].reduce((a, k) => a + (typesUsed[k] || 0), 0);
   if (visual < 8) warn(`only ${visual} visual/interactive versions (aim for 10+ per chapter)`);
 }
 
+function errorsIn(fn) { try { fn(); return false; } catch (e) { errors++; console.log('  ✗ loop check threw: ' + e.message); return true; } }
 function inRange(i, arr) { return Number.isInteger(i) && i >= 0 && i < arr.length; }
 
 function checkVariant(ctx, v, err, warn) {
@@ -141,6 +142,31 @@ function checkVariant(ctx, v, err, warn) {
   } else if (t === 'figmc') {
     if (!Array.isArray(v.figs) || v.figs.length < 2 || v.figs.some(f => !f.svg)) err('needs 2+ figs, each with svg');
     else if (!inRange(v.answer, v.figs)) err('answer must be a fig index');
+  } else if (t === 'loop') {
+    const P = v.pieces || {}, ids = Object.keys(P);
+    if (ids.length < 3 || ids.some(k => typeof P[k] !== 'string' || !P[k])) err('pieces must be {id: "Name"} with 3+ entries');
+    if (!Array.isArray(v.links) || v.links.length < 2) err('needs links: [[from, to, "+" or "-"], …] (2+)');
+    else v.links.forEach((l, i) => { if (!P[l[0]] || !P[l[1]] || l[0] === l[1] || !['+', '-'].includes(l[2])) err(`link ${i} ${JSON.stringify(l)}: needs two different piece ids and "+" or "-"`); });
+    const g = v.goal || {};
+    if (!['R', 'B'].includes(g.kind)) err('goal.kind must be "R" or "B"');
+    if (!Array.isArray(g.must) || !g.must.length || g.must.some(m => !P[m])) err('goal.must must list 1+ piece ids the loop has to pass through');
+    (v.start || []).forEach(id => { if (!P[id]) err(`start: "${id}" is not a piece`); });
+    if (!Array.isArray(v.sol) || v.sol.length < 2 || v.sol.some(id => !P[id])) err('sol must list the correct loop’s piece ids in order (2+)');
+    else if (!errorsIn(() => {
+      const T = ctx.WG.loopTruth(v), L = v.sol.map((a, i) => { const b = v.sol[(i + 1) % v.sol.length]; return { a, b, s: T[a + '>' + b] }; });
+      L.forEach(l => { if (!l.s) err(`sol step ${P[l.a]} → ${P[l.b]} is not a link (or its sign is ambiguous)`); });
+      if (L.some(l => !l.s)) return;
+      const neg = L.filter(l => l.s < 0).length;
+      if ((neg % 2 ? 'B' : 'R') !== g.kind) err(`sol has ${neg} minus sign(s), which makes it ${neg % 2 ? 'balancing' : 'reinforcing'}, but goal.kind is ${g.kind}`);
+      if ((g.must || []).some(m => !v.sol.includes(m))) err('sol must include every goal.must piece');
+      const r = ctx.WG.loopGrade(v, L, g.kind);
+      if (!r.ok) err('the grader rejects sol: ' + r.fb.join(' / '));
+      const flipped = L.map((l, i) => i ? l : Object.assign({}, l, { s: -l.s }));
+      if (ctx.WG.loopGrade(v, flipped, g.kind).ok) err('the grader accepts sol with a flipped sign');
+      if (ctx.WG.loopGrade(v, L, g.kind === 'R' ? 'B' : 'R').ok) err('the grader accepts the wrong loop kind');
+    })) {}
+    const linked = new Set((v.links || []).flatMap(l => [l[0], l[1]]));
+    if (!ids.some(id => !linked.has(id))) warn('no distractor piece (one with no links) to test what belongs in the system');
   } else if (t === 'diagram') {
     if (!v.scene || !/^<svg/.test(v.scene.trim())) err('scene must be an inline <svg>');
     if (!Array.isArray(v.labels) || !Array.isArray(v.slots) || v.labels.length < 2) err('needs labels[] and slots[]');

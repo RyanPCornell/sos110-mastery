@@ -98,6 +98,36 @@ and at least two different types per concept.
 | `bars` | `bars: [{label, ans, ref?, c?, sub?}]`, `max`, `step`, `grid`, `unit`, `tol`, `startAt`, `cap`, `legend?` | student drags bars to height; `ref` draws a grey comparison bar beside it |
 | `figmc` | `figs: [{svg, label?}]`, `answer: index` | choose the right figure; SVGs live in the bank |
 | `diagram` | `scene: '<svg…>'`, `labels: [..]`, `slots: [{x%, y%, ans, hint}]` | drag labels onto the drawing; x/y are percentages of the scene |
+| `loop` | `pieces: {id: 'Name'}`, `links: [[from, to, '+' or '-']]`, `goal: {must: [ids], kind: 'R' or 'B'}`, `sol: [ids in loop order]`, `start?: [ids]` | build a causal loop diagram (see below) |
+
+### The `loop` type (build a causal loop diagram)
+
+The student places pieces on a canvas, draws **+** and **−** arrows between them, and says whether the loop is
+**reinforcing** (R) or **balancing** (B). It is fully correct when every arrow is a real cause-and-effect link with
+the right sign, the arrows close a loop through every piece in `goal.must`, and the R/B choice matches `goal.kind`.
+A miss lists what to fix (wrong sign, wrong direction, a piece that is not part of the system, a loop that is not
+closed, how to count minus signs) and draws one correct loop.
+
+```js
+{ type: 'loop', stem: '… <b>Build the feedback loop</b> that connects <b>Arctic temperature</b> and <b>sea ice</b> …',
+  hint: '…', explain: 'Arctic temperature <b>−</b> Sea ice <b>+</b> Reflectivity <b>−</b> Sunlight absorbed <b>+</b> Arctic temperature. …',
+  pieces: { temp: 'Arctic temperature', ice: 'Sea ice cover', alb: 'Reflectivity (albedo)', abs: 'Sunlight absorbed',
+            ghg: 'Greenhouse gases', oz: 'Ozone hole' },          // 5–7 pieces; include 1–2 that are real but outside the loop, and 1 distractor with no links
+  links: [['temp', 'ice', '-'], ['ice', 'alb', '+'], ['alb', 'abs', '-'], ['abs', 'temp', '+'], ['ghg', 'temp', '+']],   // every DIRECT true link
+  goal: { must: ['temp', 'ice'], kind: 'R' },                      // the loop must pass through these; R or B
+  sol: ['temp', 'ice', 'alb', 'abs'],                              // one correct loop, in order (drawn after a miss)
+  start: [] }                                                      // optional: pieces already on the canvas
+```
+
+- **Skipped steps are accepted**, as in the Chapter 10 Loop Lab: a link counts as real if `links` lists it or a chain
+  of up to three listed links implies it (signs multiplied). So list only *direct* links; Sea ice − Sunlight absorbed
+  follows from Sea ice + Reflectivity − Sunlight absorbed. Keep `goal.must` to the pieces the stem names, so a loop that
+  skips a middle step still passes.
+- List every true direct link among the pieces, including ones outside the loop (Greenhouse gases + Arctic temperature),
+  or a correct arrow will be marked wrong.
+- **Parallel versions:** give the concept several `loop` versions with different systems (a miss leads to a new one).
+  Mix reinforcing and balancing loops.
+- The checker runs `sol` through the grader, and confirms that flipping a sign or choosing the wrong R/B is rejected.
 
 Charts available to `pick` and `review.fig` (from `charts.js`): `co2`, `emis`, `temp`, `phx`, `phanda`, `ph`, `donut`.
 Ask the platform session for new charts; the chapter supplies the data via `js/data-chNN.js`.
@@ -109,7 +139,7 @@ Ask the platform session for new charts; the chapter supplies the data via `js/d
 - **Classy, not cute:** restrained academic tone; no gimmicks, emojis or jokes in problems.
 - **Explain every answer** in one or two sentences that teach the idea, naming the number or source where it helps.
 - Students use laptops: problems must work with a mouse and keyboard; don't design around phones, but don't break them.
-- Aim per chapter: 20 concepts, ~75–80 versions, **10+ visual/interactive versions** (`slider`, `pick`, `slice`, `bars`, `figmc`, `diagram`).
+- Aim per chapter: 20 concepts, ~75–80 versions, **10+ visual/interactive versions** (`slider`, `pick`, `slice`, `bars`, `figmc`, `diagram`, `loop`).
 
 ## Testing a bank
 
