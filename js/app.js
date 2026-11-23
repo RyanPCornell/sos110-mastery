@@ -86,7 +86,14 @@
         $('[data-a="code"]', m).onclick = () => { close(); modal(`<div class="eb">Save code</div><h2 class="h2" style="margin-top:4px">Copy this code</h2><p style="font:14px/1.6 Merriweather,serif;margin:8px 0 0">Paste it into <b>Load a save code</b> on another computer to bring your progress with you.</p><textarea readonly>${encode()}</textarea><div class="row"><button class="btn sm" data-copy>Copy</button><button class="btn ghost sm" data-close>Done</button></div>`,
           (m2) => { const ta = $('textarea', m2); ta.select(); $('[data-copy]', m2).onclick = () => { ta.select(); (navigator.clipboard ? navigator.clipboard.writeText(ta.value) : Promise.reject()).then(() => toast('Save code copied'), () => { document.execCommand('copy'); toast('Save code copied'); }); }; }); };
         $('[data-a="load"]', m).onclick = () => { close(); loadModal(); };
-        $('[data-a="out"]', m).onclick = () => { if (!confirm('Switch student? This browser will forget the current progress unless you have a save code.')) return; close(); S = { v: 1, student: null, ch: {} }; save(); location.hash = '#/'; route(); };
+        // an in-page confirmation, not window.confirm(): browsers can silently block native dialogs (embedded frames,
+        // "prevent additional dialogs"), which made this button do nothing
+        $('[data-a="out"]', m).onclick = () => { close(); modal(`<div class="eb">Switch student</div><h2 class="h2" style="margin-top:4px">Start fresh in this browser?</h2>`
+          + `<p style="margin:10px 0 0;font:14px/1.6 Merriweather,serif">This browser will forget <b>${esc(st.name)}</b>’s progress. If you want to keep it, get a save code first.</p>`
+          + `<div class="row"><button class="btn ghost sm" data-code>Get my save code first</button><button class="btn gold sm" data-yes>Switch student</button><button class="btn ghost sm" data-close>Cancel</button></div>`,
+          (m2, close2) => { setTimeout(() => $('[data-close]', m2).focus(), 30);
+            $('[data-code]', m2).onclick = () => { close2(); accountMenu(); $('.mdl [data-a="code"]').click(); };
+            $('[data-yes]', m2).onclick = () => { close2(); S = { v: 1, student: null, ch: {} }; save(); history.replaceState(null, '', '#/'); route(); }; }); };
       });
   }
 
