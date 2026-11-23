@@ -14,11 +14,12 @@
   function chState(id) { return S.ch[id] || (S.ch[id] = { c: {}, t0: Date.now(), time: 0, last: null, act: 0 }); }
   function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function rngOf(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-  // version order for one student: shuffled, but a concept with `lead: 'type'` serves those versions first, so a miss
-  // on one leads to a parallel version of the same type before the others
+  // version order for one student: shuffled, but versions marked `first: true` come first (every student meets them),
+  // then a concept with `lead: 'type'` serves those versions, so a miss leads to a parallel version of the same type
   function seqFor(c) {
     const all = WG.shuffle(c.variants.map((v, i) => i), rngOf(hash((S.student ? S.student.name : '') + '|' + c.id)));
-    return c.lead ? all.filter(i => c.variants[i].type === c.lead).concat(all.filter(i => c.variants[i].type !== c.lead)) : all;
+    const first = all.filter(i => c.variants[i].first), rest = all.filter(i => !c.variants[i].first);
+    return first.concat(c.lead ? rest.filter(i => c.variants[i].type === c.lead).concat(rest.filter(i => c.variants[i].type !== c.lead)) : rest);
   }
   function cState(ch, c) {
     const cs = chState(ch.id), r = cs.c[c.id];
@@ -180,7 +181,7 @@
       const q = $('[data-q]');
       q.innerHTML = `<div class="qhead"><div><div class="eb">${sec.id} · Concept ${idx + 1} of ${ch.concepts.length}</div><h1 class="h1">${c.title}</h1></div><div class="pos">${r.m ? '<span class="tag ok">✓ Mastered</span>' : r.tries.length ? `<span class="tag">${r.tries.length} ${r.tries.length === 1 ? 'try' : 'tries'} so far</span>` : ''}</div></div>`
         + `<div class="pips" aria-label="All concepts">${ch.concepts.map((cc, i) => { const rr = cs.c[cc.id], s2 = statusOf(rr); return `<button class="${s2}${i === idx ? ' on' : ''}" data-go="${i}" title="${i + 1}. ${esc(cc.title)}" aria-label="Concept ${i + 1}: ${esc(cc.title)}"></button>`; }).join('')}</div>`
-        + `<article class="card rule qcard"><div class="qmeta"><span class="tag v">Version ${(r.cur % r.seq.length) + 1} of ${r.seq.length}</span><span class="tag">${TYPE[v.type]}</span>${practice ? '<span class="tag ok">Practice: your grade is already recorded</span>' : ''}<span style="flex:1"></span><button class="btn ghost sm resbtn" data-openres>Resources</button></div>`
+        + `<article class="card rule qcard"><div class="qmeta"><span class="tag v">Version ${(r.cur % r.seq.length) + 1} of ${r.seq.length}</span><span class="tag">${v.type === 'fill' && v.chart ? 'Read the chart' : TYPE[v.type]}</span>${practice ? '<span class="tag ok">Practice: your grade is already recorded</span>' : ''}<span style="flex:1"></span><button class="btn ghost sm resbtn" data-openres>Resources</button></div>`
         + `<div class="qstem">${v.stem}</div>${v.hint ? `<div class="qhint"><button class="linkb" data-hint>Need a hint?</button><div class="hint" hidden>${v.hint}</div></div>` : ''}<div data-w></div><div data-fb></div>`
         + `<div class="qfoot"><button class="btn ghost sm" data-prev ${idx === 0 ? 'disabled' : ''}>◂ Previous</button><span class="sp"></span><span class="note" data-note>Press <span class="kbd">Enter</span> to check</span><button class="btn" data-check disabled>Check answer</button></div></article>`;
       const host = $('[data-w]', q);

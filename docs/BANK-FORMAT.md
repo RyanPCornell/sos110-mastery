@@ -65,6 +65,7 @@ Bump the `?v=` on any script tag you change so browsers fetch the new file.
   },
   variants: [ /* 3–4 versions of the problem, below */ ],
   lead: 'loop',                      // optional: serve versions of this type first (see the loop type)
+                                     // (a single version can also set first: true to come before everything else)
 }
 ```
 
@@ -89,7 +90,7 @@ and at least two different types per concept.
 |---|---|---|
 | `mc` | `choices: [..]`, `answer: index` | 3–5 choices; shuffled; plausible distractors drawn from real misconceptions |
 | `multi` | `choices: [..]`, `answers: [indexes]` | "select all that apply"; must match exactly |
-| `fill` | `text` with `{{0}}`, `{{1}}`…; `blanks: [{num, tol, show?, w?, unit?} or {accept: [..]}]`; `note?` | numeric blanks: `num` + `tol` (accept ±tol), `show` = how to display the answer (e.g. `'27–30'`); text blanks: `accept` list (case/punctuation ignored); `note` = a formula hint shown under the sentence |
+| `fill` | `text` with `{{0}}`, `{{1}}`…; `blanks: [{num, tol, show?, w?, unit?} or {accept: [..]}]`; `note?`, `chart?`, `chartOpts?`, `cap?`, `src?` | numeric blanks: `num` + `tol` (accept ±tol), `show` = how to display the answer (e.g. `'27–30'`); text blanks: `accept` list (case/punctuation ignored); `note` = a formula hint shown under the sentence; **`chart`** puts a real data chart above the sentence: the pointer reads exact values and a click pins one, so students *use* the chart and type what they find (preferred over `pick`) |
 | `order` | `items: [..]` **in the correct order** | shuffled for the student; 3–6 items |
 | `bins` | `bins: [{name, c}]`, `items: [{t, b: binIndex}]` | drag-and-drop or click; 4–8 items |
 | `match` | `pairs: [[left, right]]`, `extra?: [distractor rights]` | dropdown per row; rights must be distinct |

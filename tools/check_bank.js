@@ -95,6 +95,7 @@ function checkVariant(ctx, v, err, warn) {
     if (!Array.isArray(v.answers) || !v.answers.length || !v.answers.every(i => inRange(i, v.choices || []))) err('answers must be indexes into choices');
     else if (v.answers.length === v.choices.length) warn('every choice is correct');
   } else if (t === 'fill') {
+    if (v.chart !== undefined && !(ctx.CH && typeof ctx.CH[v.chart] === 'function')) err(`chart "${v.chart}" is not a chart in charts.js`);
     const n = ((v.text || '').match(/\{\{\d+\}\}/g) || []).length;
     if (!n) err('text needs at least one {{0}} blank');
     if (!Array.isArray(v.blanks) || v.blanks.length !== n) err(`text has ${n} blanks but blanks[] has ${(v.blanks || []).length}`);

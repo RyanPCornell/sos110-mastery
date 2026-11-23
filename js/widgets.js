@@ -51,11 +51,28 @@ const WG = (function () {
 
   /* ── fill in the blank(s): text uses {{0}}, {{1}} ── */
   function fill(q, host, ctx) {
-    host.innerHTML = `<div class="fill">${q.text.replace(/\{\{(\d+)\}\}/g, (m, i) => { const b = q.blanks[+i];
+    // optional chart to read from: chart, chartOpts, cap, src. The pointer shows the exact value underneath; a click pins it.
+    const C = q.chart ? CH[q.chart](q.chartOpts || {}) : null;
+    host.innerHTML = (C ? `<div class="qfig">${q.cap ? `<div class="cap">${q.cap}</div>` : ''}<div class="readable" data-plot>${C.svg}</div>${q.src ? `<div class="src">${q.src}</div>` : ''}</div>`
+        + `<p class="calcnote" data-read>${C.hit ? 'Move the pointer across the chart to read its values, then fill in the blanks.' : 'Read the chart, then fill in the blanks.'}</p>` : '')
+      + `<div class="fill">${q.text.replace(/\{\{(\d+)\}\}/g, (m, i) => { const b = q.blanks[+i];
       return `<input class="blank" data-b="${i}" inputmode="${b.num !== undefined ? 'decimal' : 'text'}" autocomplete="off" spellcheck="false" aria-label="Blank ${+i + 1}" style="--w:${b.w || (b.num !== undefined ? 6 : 10)}ch">${b.unit ? `<span class="unit">${b.unit}</span>` : ''}`; })}</div>`
       + (q.note ? `<div class="calcnote">${q.note}</div>` : '');
     const ins = $$('.blank', host);
     ins.forEach(i => i.addEventListener('input', () => { i.classList.remove('right', 'wrong'); ctx.changed(); }));
+    if (C && C.hit && C.mark) {
+      const svg = $('svg', host), g = svg.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'g'); svg.appendChild(g);
+      const toSvg = e => { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
+      const tip = (t, cls, color) => { const m = C.mark(t), lbl = t.label, w = Math.min(330, 12 + lbl.length * 6.8), left = m.x + w + 12 > C.f.W ? m.x - w - 10 : m.x + 10, ty = Math.max(14, m.y - 34);
+        return `<g class="pickmark ${cls}"><path d="M${m.x} ${C.f.t}V${C.f.b}" stroke="${color}" stroke-width="1.2" stroke-dasharray="3 3"/><circle cx="${m.x}" cy="${m.y}" r="6" fill="${color}" stroke="#fffdf6" stroke-width="2.5"/>`
+          + `<rect x="${left}" y="${ty}" width="${w}" height="22" rx="11" fill="${color}"/><text class="picktip" x="${left + w / 2}" y="${ty + 15}" text-anchor="middle">${esc(lbl)}</text></g>`; };
+      let pinned = '';
+      const inside = p => p.x >= C.f.l - 6 && p.x <= C.f.r + 6;
+      svg.addEventListener('pointermove', e => { const p = toSvg(e); g.innerHTML = pinned + (inside(p) ? tip(C.hit(p.x, p.y), 'hov', '#3b3222') : ''); });
+      svg.addEventListener('pointerleave', () => { g.innerHTML = pinned; });
+      svg.addEventListener('click', e => { const p = toSvg(e); if (!inside(p)) return; const t = C.hit(p.x, p.y); pinned = tip(t, 'pin', '#8a6a2f'); g.innerHTML = pinned;
+        $('[data-read]', host).innerHTML = `Pinned: <b>${esc(t.label)}</b>. Move the pointer to keep reading, or click elsewhere on the chart.`; });
+    }
     const good = (b, v) => b.num !== undefined ? (Math.abs(num(v) - b.num) <= (b.tol || 0) + 1e-9) : (b.accept || []).some(a => norm(a) === norm(v));
     const show = b => b.num !== undefined ? (b.show || String(b.num)) : b.accept[0];
     return {
